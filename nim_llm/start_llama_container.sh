@@ -51,4 +51,4 @@ podman run --name "$CONTAINER_NAME" -it --rm \
     -e NIM_RELAX_MEM_CONSTRAINTS=1 \
     -u $(id -u) \
     -p 19002:8000 \
-    nvcr.io/nim/meta/llama-3.1-8b-instruct:1.8.0-RTX
+    nvcr.io/nim/meta/llama-3.1-8b-instruct:1.10
