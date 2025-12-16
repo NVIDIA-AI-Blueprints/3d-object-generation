@@ -101,14 +101,28 @@ class RuleType(Enum):
 class NativeLLMAgent:
     """Native LLM agent using PyTorch and HuggingFace transformers."""
     
-    def __init__(self):
+    def __init__(self, load_model: bool = True):
+        """Initialize the native LLM agent.
+        
+        Args:
+            load_model: If True, load the model immediately. If False, defer loading
+                       until ensure_model_loaded() is called. This allows for 
+                       coordinated loading with other models via GPUMemoryManager.
+        """
         self.model = None
         self.tokenizer = None
         self.device = NATIVE_LLM_DEVICE
         self.is_loaded = False
         self.conversation_history: List[Dict[str, str]] = []
         self.is_generating_prompts = False
-        self._load_model()
+        
+        if load_model:
+            self._load_model()
+    
+    def ensure_model_loaded(self):
+        """Ensure the model is loaded. Call this before any inference."""
+        if not self.is_loaded:
+            self._load_model()
     
     def _get_input_classification_rules(self) -> str:
         """Get rules for input classification phase."""
@@ -208,19 +222,20 @@ Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, o
                 logger.info("Loading INT4 GPTQ quantized model")
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,
-                    dtype=torch_dtype,
+                    torch_dtype=torch_dtype,
                     device_map=self.device,
                     trust_remote_code=True,
                     low_cpu_mem_usage=True,  # Important for quantized models
                 )
             else:
                 # Standard model loading for full precision
+                # Use torch_dtype (the warning is misleading - torch_dtype is correct for transformers)
+                logger.info(f"Loading model with torch_dtype={torch_dtype}")
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,
-                    dtype=torch_dtype,
-                    device_map=self.device,
-                    trust_remote_code=True,
-                )
+                    torch_dtype=torch_dtype,
+                ).to(self.device)
+                logger.info(f"Model moved to {self.device}")
             
             model_load_time = time.time() - model_start
             if config.VERBOSE:
@@ -275,7 +290,8 @@ Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, o
             prompt = self.tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
-                add_generation_prompt=True
+                add_generation_prompt=True,
+                enable_thinking=False  # Disable thinking mode for reasoning models
             )
         else:
             # Fallback for models without chat template
@@ -295,6 +311,11 @@ Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, o
         
         if temperature is None:
             temperature = config.LLM_TEMPERATURE
+        
+        # Verify model is on correct device
+        if config.VERBOSE:
+            model_device = next(self.model.parameters()).device
+            logger.info(f"Starting inference - Model on device: {model_device}")
         
         # Start timing for tokenization (only if verbose)
         tokenize_start = time.time() if config.VERBOSE else 0
@@ -320,7 +341,7 @@ Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, o
         # Start timing for generation (only if verbose)
         generate_start = time.time() if config.VERBOSE else 0
         
-        # Generate
+        # Generate response
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
@@ -330,6 +351,7 @@ Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, o
                 top_p=0.9,
                 pad_token_id=self.tokenizer.pad_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
+                use_cache=True,
             )
         
         generate_time = time.time() - generate_start if config.VERBOSE else 0
@@ -465,6 +487,14 @@ Prompt: A vibrant beach umbrella with colorful stripes and sturdy metal frame, o
             self.tokenizer = None
         
         self.is_loaded = False
+        self.device = "cpu"
+        
+        # Force garbage collection
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        logger.info("LLM model cleanup complete")
         self._clear_gpu_memory()
         logger.info("Native LLM model cleanup complete")
 
@@ -487,26 +517,53 @@ class NativeAgentService:
     """Service class for managing native LLM agent interactions."""
     
     def __init__(self):
-        """Initialize the native agent service."""
+        """Initialize the native agent service with lazy loading.
+        
+        Note: Model is NOT loaded here. It will be loaded by GPUMemoryManager.preload_all_models()
+        in the correct order (after TRELLIS and SANA are loaded and moved to CPU).
+        """
         self.agent: Optional[NativeLLMAgent] = None
-        self._initialize_agent()
+        # Don't load model here - let preload_all_models() handle the order
     
-    def _initialize_agent(self):
-        """Initialize the planning agent."""
+    def _initialize_agent(self, load_model: bool = True):
+        """Initialize the planning agent.
+        
+        Args:
+            load_model: If True, load the LLM model immediately. If False, defer
+                       loading until explicitly called. Used by GPUMemoryManager 
+                       to control loading order.
+        """
         try:
-            self.agent = NativeLLMAgent()
-            print("Native LLM agent initialized successfully", flush=True)
+            self.agent = NativeLLMAgent(load_model=load_model)
+            if load_model:
+                print("Native LLM agent initialized and model loaded", flush=True)
+            else:
+                print("Native LLM agent initialized (model loading deferred)", flush=True)
         except Exception as e:
             print(f"Failed to initialize native LLM agent: {e}", flush=True)
             raise
     
+    def _ensure_agent_loaded(self, load_model: bool = True):
+        """Ensure agent and model are loaded.
+        
+        Args:
+            load_model: If True, also ensure the model is loaded. If False, only
+                       create the agent wrapper without loading the model.
+        """
+        if self.agent is None:
+            self._initialize_agent(load_model=load_model)
+        elif load_model and not self.agent.is_loaded:
+            # Agent exists but model not loaded - load it now
+            self.agent.ensure_model_loaded()
+    
     def is_healthy(self) -> bool:
         """Check if the agent is healthy and ready."""
-        return self.agent.check_agent_health() if self.agent else False
+        return self.agent is not None and self.agent.check_agent_health()
     
     def chat(self, message: str, current_objects=None) -> str:
         """Send a chat message to the agent."""
         try:
+            self._ensure_agent_loaded()
             response = self.agent.run(message)
             return response.output.value
         except Exception as e:
@@ -517,6 +574,9 @@ class NativeAgentService:
         try:
             if not user_input.strip():
                 return "EMPTY", "Please enter a scene description."
+            
+            # Load agent on first use
+            self._ensure_agent_loaded()
             
             # Use the LLM to classify the input
             response = self.agent.run(user_input, RuleType.INPUT_CLASSIFICATION)
@@ -550,6 +610,8 @@ class NativeAgentService:
     def generate_objects_for_scene(self, scene_description: str) -> List[str]:
         """Generate objects for a given scene description."""
         try:
+            self._ensure_agent_loaded()
+            
             # Create a specific prompt for generating objects
             prompt = f"""Based on this scene description: "{scene_description}"
 
@@ -626,8 +688,9 @@ Scene arrangement: [Brief description of how these objects could be arranged tog
     
     def clear_memory(self) -> bool:
         """Clear the agent's conversation memory and reset with new randomization."""
-        self.agent.clear_memory()
-        logger.info("Agent memory cleared")
+        if self.agent:
+            self.agent.clear_memory()
+            logger.info("Agent memory cleared")
         return True
     
     def move_agent_to_cpu(self):
@@ -639,6 +702,14 @@ Scene arrangement: [Brief description of how these objects could be arranged tog
         """Move the agent's model back to GPU."""
         if self.agent:
             self.agent.move_to_gpu()
+    
+    def unload_agent(self):
+        """Unload the agent completely to free all memory (GPU and CPU).
+        
+        Use this in RAM_RESTRICTED mode to save system memory.
+        The agent will need to be reloaded before next use.
+        """
+        self.cleanup()
     
     def cleanup(self):
         """Clean up the agent and free all resources."""

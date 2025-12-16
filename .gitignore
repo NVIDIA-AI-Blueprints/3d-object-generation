@@ -270,6 +270,7 @@ datasets/
 
 # Exceptions for specific files that should be tracked
 !requirements.txt
+!requirements-*.txt
 !README.md
 !LICENSE
 !SECURITY.md

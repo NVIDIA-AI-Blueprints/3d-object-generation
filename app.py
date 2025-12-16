@@ -43,13 +43,10 @@ from components.blender_export import create_blender_export_section, update_expo
 from components.status_panel import create_status_panel
 from components.modal import create_modal, open_image_settings, close_modal, create_edit_modal, create_start_over_confirmation_modal, open_start_over_confirmation, close_start_over_confirmation
 from components.image_card import create_refresh_handler, create_3d_generation_handler, create_convert_all_3d_handler, invalidate_3d_model
-# Import agent service based on config setting
-if config.USE_NATIVE_LLM:
-    from services.native_agent_service import NativeAgentService as AgentService
-else:
-    from services.agent_service import AgentService
-from services.image_generation_service import ImageGenerationService
-from services.model_3d_service import Model3DService
+from services import AgentService, ImageGenerationService, Model3DService
+# Import GPU memory manager for native model coordination
+if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+    from services.gpu_memory_manager import get_gpu_memory_manager
 import threading
 import subprocess
 import requests
@@ -261,7 +258,9 @@ def _ensure_all_nims_started():
     # Only start LLM NIM if not using native LLM
     if not config.USE_NATIVE_LLM:
         _ensure_llm_nim_started()
-    _ensure_trellis_nim_started()
+    # Only start Trellis NIM if not using native TRELLIS
+    if not config.USE_NATIVE_TRELLIS:
+        _ensure_trellis_nim_started()
 
 
 def stop_llm_container(force=False):
@@ -338,6 +337,23 @@ def create_app():
     agent_service = AgentService()
     image_generation_service = ImageGenerationService()
     model_3d_service = Model3DService()
+
+    # Register services with GPU memory manager for coordinated memory management
+    if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+        gpu_manager = get_gpu_memory_manager()
+        gpu_manager.register_llm_service(agent_service)
+        gpu_manager.register_sana_service(image_generation_service)
+        gpu_manager.register_trellis_service(model_3d_service)
+        print("GPU Memory Manager initialized - services registered")
+        
+        # Pre-load all models at startup
+        # This loads TRELLIS, SANA, and LLM, then moves TRELLIS and SANA to CPU
+        # LLM stays on GPU ready for chat
+        print("\n" + "=" * 60)
+        print("PRE-LOADING MODELS - Please wait...")
+        print("=" * 60)
+        preload_status = gpu_manager.preload_all_models()
+        print(f"Pre-loading complete in {preload_status['total_time']:.2f} seconds")
 
     delete_assets_dir()
 
@@ -549,16 +565,19 @@ def create_app():
                 except Exception:
                     llm_ready = False
             
-            # Check Trellis health
-            trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
-            try:
-                trellis_resp = requests.get(trellis_health_url, timeout=1.0)
-                trellis_ready = (trellis_resp.status_code == 200)
-            except Exception:
-                trellis_ready = False
+            # Check Trellis health (skip if using native TRELLIS)
+            if config.USE_NATIVE_TRELLIS:
+                trellis_ready = True  # Native TRELLIS is always ready (loaded on demand)
+            else:
+                trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
+                try:
+                    trellis_resp = requests.get(trellis_health_url, timeout=1.0)
+                    trellis_ready = (trellis_resp.status_code == 200)
+                except Exception:
+                    trellis_ready = False
                 
-            # Start the services again if LLM or Trellis are not ready
-            if not llm_ready or not trellis_ready:
+            # Start the NIM services again if needed (only for non-native backends)
+            if (not llm_ready and not config.USE_NATIVE_LLM) or (not trellis_ready and not config.USE_NATIVE_TRELLIS):
                 _ensure_all_nims_started()
             
             return (
@@ -604,9 +623,8 @@ def create_app():
                 print(f"Timestamp before generate_images_for_objects: {time.time()}")
                 success, message, generated_images = image_generation_service.generate_images_for_objects(gallery_data, output_dir=config.GENERATED_IMAGES_DIR)
                 print(f"Timestamp after generate_images_for_objects: {time.time()}")
-                if image_generation_service.if_sana_pipeline_movement_required():
-                    image_generation_service.move_sana_pipeline_to_cpu()
-                    print(f"Timestamp after move_sana_pipeline_to_cpu: {time.time()}")
+                # SANA stays on GPU - will be moved to CPU by GPUMemoryManager 
+                # when LLM or TRELLIS needs GPU
                 if success and generated_images:
                     updated_data = []
                     for obj in gallery_data:
@@ -676,9 +694,6 @@ def create_app():
         # Health check function for both LLM and Trellis NIMs; updates status and controls UI visibility
         def check_services_health(current_counter):
             global _in_workspace_mode
-            print("check_services_health")
-            print("global _in_workspace_mode", _in_workspace_mode)
-            print("current_counter", current_counter)
 
             if _in_workspace_mode and current_counter == 0:
                 # add kill app logic here
@@ -719,19 +734,22 @@ def create_app():
                 except Exception:
                     llm_ready = False
             
-            # Check Trellis health
-            trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
-            try:
-                trellis_resp = requests.get(trellis_health_url, timeout=1.0)
-                trellis_ready = (trellis_resp.status_code == 200)
-            except Exception:
-                trellis_ready = False
+            # Check Trellis health (skip if using native TRELLIS)
+            if config.USE_NATIVE_TRELLIS:
+                trellis_ready = True  # Native TRELLIS is always ready (loaded on demand)
+            else:
+                trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
+                try:
+                    trellis_resp = requests.get(trellis_health_url, timeout=1.0)
+                    trellis_ready = (trellis_resp.status_code == 200)
+                except Exception:
+                    trellis_ready = False
             
             # Build status display
             llm_color = "#16be16" if llm_ready else "#f59e0b"
             trellis_color = "#16be16" if trellis_ready else "#f59e0b"
             llm_label = "LLM: Native" if config.USE_NATIVE_LLM else ("LLM: ready" if llm_ready else "LLM: Unloaded")
-            trellis_label = "Trellis: ready" if trellis_ready else "Trellis: Loading..."
+            trellis_label = "Trellis: Native" if config.USE_NATIVE_TRELLIS else ("Trellis: ready" if trellis_ready else "Trellis: Loading...")
             
             status_html = f'''
             <div class="status-section">
@@ -749,7 +767,6 @@ def create_app():
             show_refresh = True
             # Stop timer if we're in workspace mode
             timer_active = not _in_workspace_mode
-            print(f"Checking services health... LLM: {llm_ready}, Trellis: {trellis_ready}, in_workspace_mode: {_in_workspace_mode} timer_active: {timer_active}")
             return gr.update(visible=show_spinner), gr.update(value=status_html), gr.update(visible=show_chat), gr.update(visible=show_refresh), gr.update(active=timer_active)
         
         # Timer for initial health polling (only active until we reach workspace mode)
@@ -1205,10 +1222,9 @@ def create_app():
                         output_dir=config.GENERATED_IMAGES_DIR,
                         seed=new_seed
                     )
-                    if image_generation_service.if_sana_pipeline_movement_required():
-                        print(f"Timestamp after generate_image_from_prompt: {time.time()}")
-                        image_generation_service.move_sana_pipeline_to_cpu()
-                        print(f"Timestamp after move_sana_pipeline_to_cpu: {time.time()}")
+                    # SANA stays on GPU - will be moved to CPU by GPUMemoryManager
+                    # when LLM or TRELLIS needs GPU
+                    print(f"Timestamp after generate_image_from_prompt: {time.time()}")
 
                     invalidate_reason = None
                     

@@ -1,9 +1,13 @@
 # =============================================================================
 # Core Dependencies (always required)
 # =============================================================================
-transformers>=4.55.0
-pynvml>=12.0.0
-python-dotenv>=1.1.1
-gradio>=5.42.0
-accelerate>=1.10.0
-psutil>=7.0.0
+transformers==4.57.3
+diffusers==0.36.0
+pynvml==13.0.1
+python-dotenv==1.2.1
+# WARNING: Do NOT upgrade to Gradio 6.x - it has CUDA threading issues that cause
+# extremely slow GPU inference (~0.02 tok/s instead of ~22 tok/s). Gradio 5.x works correctly.
+gradio==5.50.0
+gradio_client==1.14.0
+accelerate==1.12.0
+psutil==7.1.3

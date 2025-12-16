@@ -1,0 +1,14 @@
+# =============================================================================
+# NIM Backend Dependencies
+# Use when: USE_NATIVE_LLM = False in config.py
+# Install with: pip install -r requirements-nim.txt
+#
+# NOTE: PyTorch should be installed FIRST via requirements-torch.txt
+#       (handled automatically by install.bat)
+# =============================================================================
+
+# Include core dependencies
+-r requirements.txt
+
+# Griptape for LLM NIM integration
+griptape[all]>=1.8.1

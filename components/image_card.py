@@ -20,10 +20,15 @@ import gradio as gr
 import random
 import os
 from services.image_generation_service import ImageGenerationService
-from services.model_3d_service import Model3DService
+# Model3DService is passed as parameter to handlers, not imported directly
+# This allows app.py to control which implementation is used (NIM vs Native TRELLIS)
 import datetime
 import config
 from utils import clear_image_generation_failure_flags, should_disable_buttons_during_3d_generation
+
+# Only import GPU manager for native models
+if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+    from services.gpu_memory_manager import get_gpu_memory_manager
 
 def invalidate_3d_model(gallery_data, card_idx, object_name, context="image change"):
     """Invalidate any existing 3D model for a card when the image has changed."""
@@ -110,6 +115,11 @@ def create_convert_all_3d_handler(model_3d_service):
             
             print(f"Converting {total_unconverted} items to 3D...")
             
+            # Prepare GPU for TRELLIS (moves LLM and SANA to CPU)
+            if config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_trellis()
+            
             # Second pass: generate 3D models for each unconverted item
             for idx, obj in enumerate(updated_data):
                 if obj.get("3d_generating", False):
@@ -183,11 +193,8 @@ def create_image_card(image_path, title, output_widget, modal_image_title, modal
             image_component = gr.Image(
                 image_path if image_path else None,
                 show_label=False,
-                show_download_button=False,
                 interactive=False,
                 height=180,
-                sources=[],
-                show_fullscreen_button=False,
                 elem_classes=["card-image"]
             )
         
@@ -248,8 +255,8 @@ def create_refresh_handler(image_generation_service):
                 seed=new_seed
             )
 
-            if image_generation_service.if_sana_pipeline_movement_required():
-                image_generation_service.move_sana_pipeline_to_cpu()
+            # SANA stays on GPU - will be moved to CPU by GPUMemoryManager
+            # when LLM or TRELLIS needs GPU
 
             invalidate_reason = None
             
@@ -333,6 +340,11 @@ def create_3d_generation_handler(model_3d_service):
             
             # Set output directory for generated 3D models
             output_dir = config.MODELS_DIR
+            
+            # Prepare GPU for TRELLIS (moves LLM and SANA to CPU)
+            if config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_trellis()
               
             # Generate 3D model using Model3DService
             success, message, glb_path = model_3d_service.generate_3d_model(

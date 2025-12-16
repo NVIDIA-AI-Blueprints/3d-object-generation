@@ -54,7 +54,7 @@ class ImageGenerationService:
             logger.warning(f"Could not clear GPU memory: {e}")
     
     def move_sana_pipeline_to_device(self, device="cuda:0"):
-        """Move SANA pipeline to specified device (GPU or CPU)."""
+        """Move SANA pipeline and guardrail model to specified device (GPU or CPU)."""
         try:
             if self.sana_pipeline is None:
                 logger.warning("SANA pipeline is not loaded")
@@ -62,20 +62,22 @@ class ImageGenerationService:
             
             logger.info(f"Moving SANA pipeline to {device}")
 
-
             if self.device == device:
                 logger.info(f"SANA pipeline is already on {device}")
-                return True
+            else:
+                # Move pipeline to specified device
+                self.sana_pipeline.to(device)
+                self.device = device
+                logger.info(f"Successfully moved SANA pipeline to {device}")
             
-            # Move pipeline to specified device
-            self.sana_pipeline.to(device)
-            self.device = device
+            # Also move guardrail model (used alongside SANA for content safety)
+            if self.guardrail_service.is_loaded:
+                self.guardrail_service.move_to_device(device)
             
             # Clear GPU memory after moving to CPU
             if device == "cpu":
                 self._clear_gpu_memory()
             
-            logger.info(f"Successfully moved SANA pipeline to {device}")
             return True
             
         except Exception as e:
@@ -83,12 +85,34 @@ class ImageGenerationService:
             return False
     
     def move_sana_pipeline_to_gpu(self):
-        """Move SANA pipeline to GPU."""
+        """Move SANA pipeline and guardrail to GPU."""
         return self.move_sana_pipeline_to_device("cuda:0")
     
     def move_sana_pipeline_to_cpu(self):
-        """Move SANA pipeline to CPU."""
+        """Move SANA pipeline and guardrail to CPU."""
         return self.move_sana_pipeline_to_device("cpu")
+    
+    def unload_sana_model(self):
+        """Completely unload SANA pipeline to free all memory (GPU and CPU).
+        
+        Use this in RAM_RESTRICTED mode to save system memory.
+        The model will need to be reloaded before next use.
+        """
+        if self.sana_pipeline is not None:
+            logger.info("Unloading SANA pipeline completely...")
+            del self.sana_pipeline
+            self.sana_pipeline = None
+            self.is_loaded = False
+            
+            # Also unload guardrail if present
+            if self.guardrail_service:
+                self.guardrail_service.unload_model()
+            
+            # Clear memory
+            self._clear_gpu_memory()
+            logger.info("SANA pipeline unloaded")
+            return True
+        return False
     
     def load_sana_model(self, device="cuda:0", force_reload=False):
         """Load the SANA model for image generation with optimizations."""

@@ -17,12 +17,27 @@
 
 """Business logic services for Chat-to-3D application."""
 
-from .agent_service import AgentService
+import config
+
+# Always available
 from .image_generation_service import ImageGenerationService
-from .model_3d_service import Model3DService
+
+# Conditional import: AgentService
+# Use native PyTorch LLM or NIM-based LLM based on config
+if config.USE_NATIVE_LLM:
+    from .native_agent_service import NativeAgentService as AgentService
+else:
+    from .agent_service import AgentService
+
+# Conditional import: Model3DService
+# Use native TRELLIS or NIM-based Trellis based on config
+if config.USE_NATIVE_TRELLIS:
+    from .trellis_service import Model3DService
+else:
+    from .model_3d_service import Model3DService
 
 __all__ = [
     'AgentService',
-    'ImageGenerationService', 
-    'Model3DService'
+    'ImageGenerationService',
+    'Model3DService',
 ] 

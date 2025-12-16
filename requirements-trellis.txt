@@ -1,0 +1,55 @@
+# =============================================================================
+# Native TRELLIS Dependencies
+# Use when: USE_NATIVE_TRELLIS = True in config.py
+# Install with: pip install -r requirements-trellis.txt
+# 
+# Note: This is for TRELLIS integration into 3d-object-generation app.
+#       Gradio dependencies are NOT included (main app provides Gradio).
+#
+# CUDA Extensions (built from source by install_dependencies.py):
+#   - vox2seq: Voxel to sequence conversion
+#   - nvdiffrast: NVIDIA differentiable rasterizer (mesh rendering)
+#   - diffoctreerast: Differentiable octree rasterization (radiance fields)
+#   - diff-gaussian-rasterization: Gaussian splatting renderer
+# =============================================================================
+
+# IMPORTANT: Use PyTorch CUDA index for any torch dependencies pulled by packages below
+# This prevents packages like open3d/spconv from installing CPU-only torch
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# Kaolin - NVIDIA 3D deep learning library (for FlexiCubes mesh extraction)
+--find-links https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.7.0_cu128.html
+kaolin==0.18.0
+
+# Flash Attention - prebuilt wheel for Windows (Python 3.11 + CUDA 12.8 + PyTorch 2.7)
+# Note: This URL is Windows-specific; Linux users may need a different wheel
+https://github.com/kingbri1/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu128torch2.7.0cxx11abiFALSE-cp311-cp311-win_amd64.whl
+
+# TRELLIS core dependencies
+pillow==11.3.0
+imageio==2.37.2
+imageio-ffmpeg==0.6.0
+tqdm==4.67.1
+easydict==1.13
+opencv-python-headless==4.12.0.88
+scipy==1.16.3
+ninja==1.13.0
+einops==0.8.1
+
+# 3D processing
+trimesh==4.10.1
+xatlas==0.0.11
+pyvista==0.46.4
+pymeshfix==0.17.2
+igraph==1.0.0
+open3d==0.19.0
+
+# Background removal
+rembg==2.0.69
+onnxruntime==1.23.2
+
+# spconv for sparse convolutions (CUDA 12.6 compatible with 12.8)
+spconv-cu126==2.3.8
+
+# utils3d from git (pinned commit for reproducibility)
+utils3d @ git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8

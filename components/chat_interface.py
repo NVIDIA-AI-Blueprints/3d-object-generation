@@ -19,6 +19,11 @@
 """Chat interface component for LLM agent interaction."""
 
 import gradio as gr
+import config
+
+# Only import GPU manager for native models
+if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+    from services.gpu_memory_manager import get_gpu_memory_manager
 
 
 def create_chat_interface():
@@ -66,6 +71,11 @@ def handle_scene_description(scene_description, agent_service, gallery_data, ima
         return "Please enter a scene description.", gallery_data, tip_html, True
     
     try:
+        # Prepare GPU for LLM inference (moves other models to CPU)
+        if config.USE_NATIVE_LLM:
+            gpu_manager = get_gpu_memory_manager()
+            gpu_manager.prepare_for_llm()
+        
         # First, classify the input
         classification, tip_message = agent_service.classify_input(scene_description)
         
@@ -110,6 +120,12 @@ def handle_scene_description(scene_description, agent_service, gallery_data, ima
             # Automatically generate images if image generation service is available
             if image_generation_service:
                 print("Generating images for all objects...")
+                
+                # Prepare GPU for SANA (moves LLM to CPU)
+                if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+                    gpu_manager = get_gpu_memory_manager()
+                    gpu_manager.prepare_for_sana()
+                
                 try:
                     success, message, generated_images = image_generation_service.generate_images_for_objects(new_gallery_data)
                     

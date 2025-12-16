@@ -1,0 +1,16 @@
+# =============================================================================
+# Native LLM Dependencies
+# Use when: USE_NATIVE_LLM = True in config.py
+# Supports both full precision and GPTQ INT4 quantized models
+# Install with: pip install -r requirements-native.txt
+#
+# NOTE: PyTorch should be installed FIRST via requirements-torch.txt
+#       (handled automatically by install.bat)
+# =============================================================================
+
+# Include core dependencies
+-r requirements.txt
+
+# GPTQ quantization support (for INT4 quantized models)
+auto-gptq==0.7.1
+optimum==2.0.0

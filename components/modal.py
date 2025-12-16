@@ -52,9 +52,7 @@ def create_modal():
                         modal_image = gr.Image(
                             label="Selected Image",
                             interactive=False,
-                            show_fullscreen_button=False,
-                            height=350,
-                            sources=[]
+                            height=350
                         )
             with gr.TabItem("3D"):
                 with gr.Column():

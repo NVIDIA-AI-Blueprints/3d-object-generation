@@ -48,6 +48,32 @@ starting_services = False
 llm_status_lock = threading.Lock()
 trellis_status_lock = threading.Lock()
 gradio_status_lock = threading.Lock()
+
+# Default conda environment name (can be overridden by config.py)
+DEFAULT_CONDA_ENV_NAME = "trellis"
+
+def get_conda_env_name():
+    """Read CONDA_ENV_NAME from config.py, with fallback to default."""
+    try:
+        addon_prefs = bpy.context.preferences.addons[__name__].preferences
+        base_path = addon_prefs.base_path.strip()
+        if base_path:
+            config_path = os.path.join(base_path, "config.py")
+            if os.path.isfile(config_path):
+                with open(config_path, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("CONDA_ENV_NAME") and "=" in line:
+                            value = line.split("=")[1].strip()
+                            # Remove quotes and inline comments
+                            value = value.strip('"').strip("'")
+                            if "#" in value:
+                                value = value.split("#")[0].strip()
+                            if value:
+                                return value
+    except Exception as e:
+        logger.debug(f"Could not read CONDA_ENV_NAME from config.py: {e}")
+    return DEFAULT_CONDA_ENV_NAME
 starting_services_lock = threading.Lock()
 stop_thread = False
 log_output_stop = threading.Event()
@@ -85,21 +111,22 @@ def setup_logging():
     update_logging_level()
 
 def get_conda_python_path():
-    """Attempt to find the Conda 'trellis' environment's Python executable."""
+    """Attempt to find the Conda environment's Python executable."""
     addon_prefs = bpy.context.preferences.addons[__name__].preferences
     user_python_path = addon_prefs.python_path.strip()
+    env_name = get_conda_env_name()
 
     # Step 1: Check CONDA_PREFIX
     conda_prefix = os.environ.get("CONDA_PREFIX")
     if conda_prefix and os.path.isdir(conda_prefix):
-        if os.path.basename(conda_prefix) == "trellis" and os.path.basename(os.path.dirname(conda_prefix)) == "envs":
+        if os.path.basename(conda_prefix) == env_name and os.path.basename(os.path.dirname(conda_prefix)) == "envs":
             conda_base = os.path.dirname(os.path.dirname(conda_prefix))
         else:
             conda_base = conda_prefix
         if platform.system() == "Windows":
-            python_path = os.path.normpath(os.path.join(conda_base, "envs", "trellis", "python.exe"))
+            python_path = os.path.normpath(os.path.join(conda_base, "envs", env_name, "python.exe"))
         else:
-            python_path = os.path.join(conda_base, "envs", "trellis", "bin", "python")
+            python_path = os.path.join(conda_base, "envs", env_name, "bin", "python")
         if os.path.isfile(python_path):
             try:
                 result = subprocess.run(
@@ -121,8 +148,8 @@ def get_conda_python_path():
             with open(env_file, 'r') as f:
                 for line in f:
                     env_path = line.strip()
-                    if env_path and os.path.basename(env_path) == "trellis" and os.path.basename(os.path.dirname(env_path)) == "envs":
-                        logger.debug("Found trellis environment in environments.txt: %s", env_path)
+                    if env_path and os.path.basename(env_path) == env_name and os.path.basename(os.path.dirname(env_path)) == "envs":
+                        logger.debug("Found %s environment in environments.txt: %s", env_name, env_path)
                         if platform.system() == "Windows":
                             python_path = os.path.normpath(os.path.join(env_path, "python.exe"))
                         else:
@@ -178,9 +205,9 @@ def get_conda_python_path():
             if result.returncode == 0 and result.stdout.strip():
                 conda_base = result.stdout.strip()
                 if platform.system() == "Windows":
-                    python_path = os.path.normpath(os.path.join(conda_base, "envs", "trellis", "python.exe"))
+                    python_path = os.path.normpath(os.path.join(conda_base, "envs", env_name, "python.exe"))
                 else:
-                    python_path = os.path.join(conda_base, "envs", "trellis", "bin", "python")
+                    python_path = os.path.join(conda_base, "envs", env_name, "bin", "python")
                 if os.path.isfile(python_path):
                     try:
                         result = subprocess.run(
@@ -200,9 +227,9 @@ def get_conda_python_path():
     # Step 5: Fallback to default
     default_conda_base = os.path.expanduser("~/Miniconda3")
     if platform.system() == "Windows":
-        python_path = os.path.normpath(os.path.join(default_conda_base, "envs", "trellis", "python.exe"))
+        python_path = os.path.normpath(os.path.join(default_conda_base, "envs", env_name, "python.exe"))
     else:
-        python_path = os.path.join(default_conda_base, "envs", "trellis", "bin", "python")
+        python_path = os.path.join(default_conda_base, "envs", env_name, "bin", "python")
     if os.path.isfile(python_path):
         try:
             result = subprocess.run(
@@ -217,7 +244,7 @@ def get_conda_python_path():
         except Exception as e:
             logger.debug("Failed to verify default Python path: %s", str(e))
 
-    logger.error("Conda Python not found. Ensure the 'trellis' environment is set up correctly.")
+    logger.error("Conda Python not found. Ensure the '%s' environment is set up correctly.", env_name)
     return None
 
 def get_services_status(python_path):
@@ -643,7 +670,7 @@ def register():
             addon_prefs.python_path = python_path
             logger.info(f"Automatically set Python path to: {python_path}")
         else:
-            logger.warning("Could not find Conda Python executable for trellis environment")
+            logger.warning(f"Could not find Conda Python executable for {get_conda_env_name()} environment")
     
     # Start status threads and UI timer
     start_status_threads()

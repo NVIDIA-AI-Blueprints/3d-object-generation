@@ -24,10 +24,107 @@ without changing core functionality or UI elements.
 import os
 from pathlib import Path
 
+# =============================================================================
+# Conda Environment Settings
+# =============================================================================
+CONDA_ENV_NAME = "trellis"
+
+# =============================================================================
+# Backend Selection Flags
+# =============================================================================
+# USE_NATIVE_LLM: Controls which LLM backend to use
+#   - True:  Use native PyTorch model (no NIM, no griptape required)
+#   - False: Use LLM NIM service (requires griptape package)
+USE_NATIVE_LLM = True
+
+# USE_NATIVE_TRELLIS: Controls which 3D generation backend to use
+#   - True:  Use native PyTorch TRELLIS (no NIM required, runs locally)
+#   - False: Use Trellis NIM service (requires running NIM container)
+USE_NATIVE_TRELLIS = True
+
+
+# #############################################################################
+#                          NIM CONFIGURATION
+# #############################################################################
+# Settings used when USE_NATIVE_LLM = False or USE_NATIVE_TRELLIS = False
+# Requires: griptape[all] package and running NIM containers
+# =============================================================================
+
+# NIM LLM Agent Settings
+AGENT_MODEL = "meta/llama-3.1-8b-instruct"
+AGENT_BASE_URL = "http://localhost:19002/v1"
+
+# NIM TRELLIS Settings
+TRELLIS_BASE_URL = "http://localhost:8000/v1"
+
+
+# #############################################################################
+#                        NATIVE CONFIGURATION
+# #############################################################################
+# Settings used when USE_NATIVE_LLM = True or USE_NATIVE_TRELLIS = True
+# No NIM required, runs models directly on GPU
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Native LLM Settings (used when USE_NATIVE_LLM = True)
+# -----------------------------------------------------------------------------
+# Model name from HuggingFace
+# Qwen3-4B: "Qwen/Qwen3-4B" (use precision: bfloat16) - 4B params, ~8GB VRAM
+# Llama-3.1-8B: "meta-llama/Llama-3.1-8B-Instruct" (use precision: bfloat16) - 8B params, ~16GB VRAM
+# For GPTQ INT4: "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4" (use precision: int4)
+NATIVE_LLM_MODEL = "Qwen/Qwen3-4B"
+
+# Precision options: "float16", "bfloat16", "float32", "int4"
+# Use "int4" when loading GPTQ quantized models
+NATIVE_LLM_PRECISION = "bfloat16"
+
+NATIVE_LLM_MAX_NEW_TOKENS = 1024  # Maximum tokens to generate
+NATIVE_LLM_DEVICE = "cuda:0"  # Device to load model on
+
+# -----------------------------------------------------------------------------
+# Native TRELLIS Settings (used when USE_NATIVE_TRELLIS = True)
+# -----------------------------------------------------------------------------
+# Native TRELLIS model name (from HuggingFace)
+NATIVE_TRELLIS_MODEL = "microsoft/TRELLIS-image-large"
+
+# GPU Memory Settings
+# Prevent PyTorch from using shared memory (system RAM) - only use dedicated VRAM
+# Set to a value < 1.0 to limit GPU memory fraction (e.g., 0.95 = 95% of VRAM)
+# Set to 1.0 to use all available VRAM (but still prevent shared memory)
+# Set to None to disable memory limit (allows shared memory - NOT recommended)
+TRELLIS_MAX_GPU_MEMORY_FRACTION = 0.95
+
+# Clear GPU cache between batch image processing to prevent memory buildup
+TRELLIS_CLEAR_CACHE_BETWEEN_IMAGES = True
+
+# -----------------------------------------------------------------------------
+# Native Memory Management Mode
+# -----------------------------------------------------------------------------
+# NATIVE_VRAM_RESTRICTED_MODE: Restrict VRAM usage to ~16GB
+#   - True:  Aggressively manage memory, suitable for GPUs with 16GB or less
+#   - False: Use all available VRAM, suitable for GPUs with 24GB+
+NATIVE_VRAM_RESTRICTED_MODE = False
+
+# NATIVE_RAM_RESTRICTED_MODE: Unload models instead of moving to CPU
+#   - True:  Completely unload models when not needed (saves system RAM, slower switching)
+#   - False: Move models to CPU when not needed (uses system RAM, faster switching)
+# Note: If False, models are preloaded at startup and moved to CPU/GPU as needed
+NATIVE_RAM_RESTRICTED_MODE = False
+
+
+# #############################################################################
+#                        COMMON CONFIGURATION
+# #############################################################################
+# Settings shared by both NIM and Native backends
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Directory Setup
+# -----------------------------------------------------------------------------
 # Get the base directory of the project
 BASE_DIR = Path(__file__).parent
 
-# Use user's home directory
+# Use user's home directory for data storage
 HOME_DIR = Path.home()
 TRELLIS_DIR = HOME_DIR / ".trellis"  # Hidden directory
 ASSETS_DIR = TRELLIS_DIR / "assets"
@@ -62,23 +159,38 @@ CUSTOM_JS_FILE = JS_DIR / "custom.js"
 NVIDIA_LOGO_FILE = IMAGES_DIR / "nvidia_logo.png"
 GENERATING_PLACEHOLDER_FILE = IMAGES_DIR / "generating.svg"
 
-NUM_OF_OBJECTS = 20
+# -----------------------------------------------------------------------------
+# LLM Shared Settings (used by both backends)
+# -----------------------------------------------------------------------------
+LLM_TEMPERATURE = 0.4  # Controls randomness in LLM responses (0.0 = deterministic, 1.0 = very random)
+LLM_RANDOM_SEED_ENABLED = True  # Enable random seed for object generation
+TWO_D_PROMPT_LENGTH = 30
 
-# Basic configuration settings
+# -----------------------------------------------------------------------------
+# UI Settings
+# -----------------------------------------------------------------------------
+NUM_OF_OBJECTS = 20
 MAX_CARDS = 20  # Maximum number of cards in gallery
 CARDS_PER_ROW = 4  # Number of cards per row in gallery
-VRAM_THRESHOLD_SANA = 16 # if GPU has <= VRAM_THRESHOLD_SANA, SANA Pipeline will be stopped
-VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION = 16 # if GPU has <= VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION, image generation will be disabled during 3D generation
+INITIAL_MESSAGE = "Hello! I'm your helpful scene planning assistant. Please describe the scene you'd like to create."
+
+# -----------------------------------------------------------------------------
+# VRAM Thresholds
+# -----------------------------------------------------------------------------
+VRAM_THRESHOLD_SANA = 16  # if GPU has <= VRAM_THRESHOLD_SANA, SANA Pipeline will be stopped
+VRAM_THRESHOLD_DISABLE_IMAGE_GEN_DURING_3D_GENERATION = 16  # Disable image gen during 3D gen if GPU <= this
 VRAM_THRESHOLD_LLM = 31  # if GPU has > VRAM_THRESHOLD_LLM, LLM Agent will not be stopped
+
+# -----------------------------------------------------------------------------
+# Model Defaults
+# -----------------------------------------------------------------------------
 DEFAULT_SEED = 42
 DEFAULT_SPARSE_STEPS = 25
 DEFAULT_SLAT_STEPS = 25
 DEFAULT_CFG_STRENGTH = 7.5
 MAX_PROMPT_LENGTH = 50
-LOG_LEVEL = "INFO"
-LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# TRELLIS pipeline settings
+# TRELLIS pipeline settings (for NIM)
 TRELLIS_TEXT_LARGE_MODEL = "JeffreyXiang/TRELLIS-text-large"
 TRELLIS_TEXT_BASE_MODEL = "JeffreyXiang/TRELLIS-text-base"
 TRELLIS_IMAGE_LARGE_MODEL = "microsoft/TRELLIS-image-large"
@@ -93,54 +205,18 @@ DEFAULT_TRELLIS_MODEL = "TRELLIS-text-large"
 # Algorithm configuration
 SPCONV_ALGO = "spconv2"
 
-# INITIAL MESSAGE
-INITIAL_MESSAGE = "Hello! I'm your helpful scene planning assistant. Please describe the scene you'd like to create."
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+LOG_LEVEL = "INFO"
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+VERBOSE = False  # Enable detailed logging for timing and VRAM usage
 
-# =============================================================================
-# LLM Backend Selection
-# =============================================================================
-# USE_NATIVE_LLM: Controls which LLM backend to use
-#   - True:  Use native PyTorch model (no NIM, no griptape required)
-#   - False: Use LLM NIM service (requires griptape package)
-USE_NATIVE_LLM = True
 
-# =============================================================================
-# NIM Agent Settings (used when USE_NATIVE_LLM = False)
-# Requires: griptape[all] package
-# =============================================================================
-AGENT_MODEL = "meta/llama-3.1-8b-instruct"
-AGENT_BASE_URL = "http://localhost:19002/v1"
-TRELLIS_BASE_URL = "http://localhost:8000/v1"
-TWO_D_PROMPT_LENGTH = 30
+# #############################################################################
+#                          HELPER FUNCTIONS
+# #############################################################################
 
-# =============================================================================
-# LLM Shared Settings (used by both backends)
-# =============================================================================
-LLM_TEMPERATURE = 0.4  # Controls randomness in LLM responses (0.0 = deterministic, 1.0 = very random)
-LLM_RANDOM_SEED_ENABLED = True  # Enable random seed for object generation
-
-# =============================================================================
-# Native LLM Settings (used when USE_NATIVE_LLM = True)
-# No NIM required, runs model directly on GPU
-# =============================================================================
-# Model name from HuggingFace
-# For full precision: "meta-llama/Llama-3.1-8B-Instruct" (use precision: bfloat16)
-# For GPTQ INT4:      "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4" (use precision: int4)
-NATIVE_LLM_MODEL = "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4"
-
-# Precision options: "float16", "bfloat16", "float32", "int4"
-# Use "int4" when loading GPTQ quantized models
-NATIVE_LLM_PRECISION = "int4"
-
-NATIVE_LLM_MAX_NEW_TOKENS = 1024  # Maximum tokens to generate
-NATIVE_LLM_DEVICE = "cuda:0"  # Device to load model on
-
-# =============================================================================
-# Verbose Logging
-# =============================================================================
-VERBOSE = True  # Enable detailed logging for timing and VRAM usage
-
-# Simple helper functions
 def get_static_paths():
     """Get static asset paths."""
     return {
@@ -159,4 +235,4 @@ def get_output_paths():
         "assets": ASSETS_DIR,
         "prompts": PROMPTS_DIR,
         "scene": SCENE_DIR
-    } 
+    }
