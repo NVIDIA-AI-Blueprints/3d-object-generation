@@ -42,6 +42,16 @@ if not exist requirements.txt (
     pause
     exit /b 1
 )
+if not exist install_dependencies.py (
+    echo [ERROR] install_dependencies.py not found!
+    pause
+    exit /b 1
+)
+if not exist config.py (
+    echo [ERROR] config.py not found!
+    pause
+    exit /b 1
+)
 
 :: Ensure Conda is initialized in the current shell
 echo Initializing Conda...
@@ -148,11 +158,11 @@ if errorlevel 1 (
 )
 
 
-REM Install requirements.txt
-echo Installing requirements.txt...
-pip install -r requirements.txt
+REM Install dependencies based on config.py settings
+echo Installing dependencies based on config.py settings...
+python install_dependencies.py
 if errorlevel 1 (
-    echo [ERROR] Failed to install POC requirements!
+    echo [ERROR] Failed to install dependencies!
     pause
     exit /b 1
 )

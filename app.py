@@ -36,16 +36,20 @@ import time
 import socket
 import logging
 import datetime
+import config
 from components.chat_interface import create_chat_interface, handle_scene_description
 from components.image_gallery import create_image_gallery
 from components.blender_export import create_blender_export_section, update_export_section, create_export_modal, open_export_modal, close_export_modal, export_3d_assets_to_folder
 from components.status_panel import create_status_panel
 from components.modal import create_modal, open_image_settings, close_modal, create_edit_modal, create_start_over_confirmation_modal, open_start_over_confirmation, close_start_over_confirmation
 from components.image_card import create_refresh_handler, create_3d_generation_handler, create_convert_all_3d_handler, invalidate_3d_model
-from services.agent_service import AgentService
+# Import agent service based on config setting
+if config.USE_NATIVE_LLM:
+    from services.native_agent_service import NativeAgentService as AgentService
+else:
+    from services.agent_service import AgentService
 from services.image_generation_service import ImageGenerationService
 from services.model_3d_service import Model3DService
-import config
 import threading
 import subprocess
 import requests
@@ -253,13 +257,18 @@ def _ensure_trellis_nim_started():
     threading.Thread(target=_runner, daemon=True).start()
 
 def _ensure_all_nims_started():
-    """Start both LLM and Trellis NIM containers in parallel."""
-    _ensure_llm_nim_started()
+    """Start NIM containers based on config settings."""
+    # Only start LLM NIM if not using native LLM
+    if not config.USE_NATIVE_LLM:
+        _ensure_llm_nim_started()
     _ensure_trellis_nim_started()
 
 
 def stop_llm_container(force=False):
     """Stop the LLM container after workspace transition."""
+    # Skip if using native LLM (no container to stop)
+    if config.USE_NATIVE_LLM:
+        return
     # Only proceed if we're in workspace mode (valid scene input)
     global _in_workspace_mode, _nim_bootstrap_started
     if not _in_workspace_mode and not force:
@@ -529,32 +538,33 @@ def create_app():
             except Exception as e:
                 print(f"Error cleaning up SANA pipeline: {e}")
             
-            # Check if both services are ready before showing chat
-            llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
-            trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
+            # Check if LLM is ready before showing chat (Trellis can load in background)
+            if config.USE_NATIVE_LLM:
+                llm_ready = True  # Native LLM is always ready
+            else:
+                llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
+                try:
+                    llm_resp = requests.get(llm_health_url, timeout=1.0)
+                    llm_ready = (llm_resp.status_code == 200)
+                except Exception:
+                    llm_ready = False
             
-            try:
-                llm_resp = requests.get(llm_health_url, timeout=1.0)
-                llm_ready = (llm_resp.status_code == 200)
-            except Exception:
-                llm_ready = False
-                
+            # Check Trellis health
+            trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
             try:
                 trellis_resp = requests.get(trellis_health_url, timeout=1.0)
                 trellis_ready = (trellis_resp.status_code == 200)
             except Exception:
                 trellis_ready = False
                 
-            both_ready = llm_ready and trellis_ready
-                
-            # Start the services again if not ready
-            if not both_ready:
+            # Start the services again if LLM or Trellis are not ready
+            if not llm_ready or not trellis_ready:
                 _ensure_all_nims_started()
             
             return (
                 gr.update(visible=False),               # hide workspace
                 gr.update(elem_classes=["main-content", "landing"]),  # restore landing centering
-                gr.update(visible=both_ready),          # show chat section only if both services are ready
+                gr.update(visible=llm_ready),           # show chat section when LLM is ready
                 gr.update(value=""),                   # clear chat input
                 gr.update(visible=False),               # hide export status
                 gr.update(visible=False) if ENABLE_STATUS_PANEL else gr.update(visible=False),  # hide right panel if open
@@ -697,13 +707,17 @@ def create_app():
                 os._exit(0)
             
             
-            # Check LLM health
-            llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
-            try:
-                llm_resp = requests.get(llm_health_url, timeout=1.0)
-                llm_ready = (llm_resp.status_code == 200)
-            except Exception:
-                llm_ready = False
+            # Check LLM health (skip if using native LLM)
+            if config.USE_NATIVE_LLM:
+                # Native LLM is always "ready" (loaded on demand)
+                llm_ready = True
+            else:
+                llm_health_url = f"{config.AGENT_BASE_URL}/health/ready"
+                try:
+                    llm_resp = requests.get(llm_health_url, timeout=1.0)
+                    llm_ready = (llm_resp.status_code == 200)
+                except Exception:
+                    llm_ready = False
             
             # Check Trellis health
             trellis_health_url = f"{config.TRELLIS_BASE_URL}/health/ready"
@@ -716,8 +730,8 @@ def create_app():
             # Build status display
             llm_color = "#16be16" if llm_ready else "#f59e0b"
             trellis_color = "#16be16" if trellis_ready else "#f59e0b"
-            llm_label = "LLM: ready" if llm_ready else "LLM: Unloaded"
-            trellis_label = "Trellis: ready" if trellis_ready else "Trellis: Unloaded"
+            llm_label = "LLM: Native" if config.USE_NATIVE_LLM else ("LLM: ready" if llm_ready else "LLM: Unloaded")
+            trellis_label = "Trellis: ready" if trellis_ready else "Trellis: Loading..."
             
             status_html = f'''
             <div class="status-section">
@@ -726,11 +740,11 @@ def create_app():
             </div>
             '''
             
-            # Both services must be ready to proceed
-            both_ready = llm_ready and trellis_ready
-            show_spinner = not both_ready and not _in_workspace_mode
-            # Only show chat when both services are ready AND we're not in workspace mode
-            show_chat = both_ready and not _in_workspace_mode
+            # Only LLM needs to be ready to show landing page
+            # Trellis will continue loading in background and must be ready before 3D generation
+            show_spinner = not llm_ready and not _in_workspace_mode
+            # Show chat when LLM is ready (don't wait for Trellis)
+            show_chat = llm_ready and not _in_workspace_mode
             # Show refresh button when in workspace mode, hide when in landing mode
             show_refresh = True
             # Stop timer if we're in workspace mode
@@ -1376,7 +1390,7 @@ if __name__ == "__main__":
         print("Starting app creation")
         app = create_app()
         print("app created, launching app...")
-        app.launch(debug=True, server_name="127.0.0.1", server_port=7860, share=False, quiet=True)
+        app.launch(debug=True, server_name="127.0.0.1", server_port=7860, share=False, quiet=False)
         print("app Launched")
     except KeyboardInterrupt:
         print("\nKeyboard interrupt received...")

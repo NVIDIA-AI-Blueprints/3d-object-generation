@@ -96,15 +96,49 @@ SPCONV_ALGO = "spconv2"
 # INITIAL MESSAGE
 INITIAL_MESSAGE = "Hello! I'm your helpful scene planning assistant. Please describe the scene you'd like to create."
 
-# Agent settings
+# =============================================================================
+# LLM Backend Selection
+# =============================================================================
+# USE_NATIVE_LLM: Controls which LLM backend to use
+#   - True:  Use native PyTorch model (no NIM, no griptape required)
+#   - False: Use LLM NIM service (requires griptape package)
+USE_NATIVE_LLM = True
+
+# =============================================================================
+# NIM Agent Settings (used when USE_NATIVE_LLM = False)
+# Requires: griptape[all] package
+# =============================================================================
 AGENT_MODEL = "meta/llama-3.1-8b-instruct"
-AGENT_BASE_URL ="http://localhost:19002/v1"
+AGENT_BASE_URL = "http://localhost:19002/v1"
 TRELLIS_BASE_URL = "http://localhost:8000/v1"
 TWO_D_PROMPT_LENGTH = 30
 
-# LLM randomization settings
+# =============================================================================
+# LLM Shared Settings (used by both backends)
+# =============================================================================
 LLM_TEMPERATURE = 0.4  # Controls randomness in LLM responses (0.0 = deterministic, 1.0 = very random)
 LLM_RANDOM_SEED_ENABLED = True  # Enable random seed for object generation
+
+# =============================================================================
+# Native LLM Settings (used when USE_NATIVE_LLM = True)
+# No NIM required, runs model directly on GPU
+# =============================================================================
+# Model name from HuggingFace
+# For full precision: "meta-llama/Llama-3.1-8B-Instruct" (use precision: bfloat16)
+# For GPTQ INT4:      "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4" (use precision: int4)
+NATIVE_LLM_MODEL = "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4"
+
+# Precision options: "float16", "bfloat16", "float32", "int4"
+# Use "int4" when loading GPTQ quantized models
+NATIVE_LLM_PRECISION = "int4"
+
+NATIVE_LLM_MAX_NEW_TOKENS = 1024  # Maximum tokens to generate
+NATIVE_LLM_DEVICE = "cuda:0"  # Device to load model on
+
+# =============================================================================
+# Verbose Logging
+# =============================================================================
+VERBOSE = True  # Enable detailed logging for timing and VRAM usage
 
 # Simple helper functions
 def get_static_paths():

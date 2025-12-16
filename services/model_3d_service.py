@@ -23,10 +23,14 @@ import logging
 import requests
 import datetime
 import json
+import time
 from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+# Default timeout for waiting for Trellis to be ready (in seconds)
+TRELLIS_WAIT_TIMEOUT = 300  # 5 minutes
 
 class Model3DService:
     """Service for generating 3D models from images using a REST API."""
@@ -92,6 +96,12 @@ class Model3DService:
             Tuple of (success, message, glb_file_path)
         """
         try:
+            # Wait for Trellis service to be ready before proceeding
+            if not self.check_service_health():
+                logger.info("Trellis service not ready, waiting...")
+                if not self.wait_for_service_ready():
+                    return False, "Trellis 3D service not available - timeout waiting for service", None
+            
             # Encode image to base64
             base64_image = self.encode_image_to_base64(image_path)
             if not base64_image:
@@ -219,8 +229,8 @@ class Model3DService:
             True if service is healthy, False otherwise
         """
         try:
-            # Try a basic health check (adjust endpoint as needed)
-            health_url = f"{self.base_url}/health/ready"
+            # Health endpoint is at /v1/health/ready
+            health_url = f"{self.base_url}/v1/health/ready"
             response = requests.get(health_url, timeout=5)
             return response.status_code == 200
         except:
@@ -230,6 +240,32 @@ class Model3DService:
                 return response.status_code in [200, 405]  # 405 is ok, means endpoint exists
             except:
                 return False
+    
+    def wait_for_service_ready(self, timeout: int = TRELLIS_WAIT_TIMEOUT, poll_interval: int = 5) -> bool:
+        """Wait for the Trellis 3D generation service to be ready.
+        
+        Args:
+            timeout: Maximum time to wait in seconds (default: 5 minutes)
+            poll_interval: Time between health checks in seconds (default: 5)
+            
+        Returns:
+            True if service is ready, False if timeout reached
+        """
+        start_time = time.time()
+        logger.info(f"Waiting for Trellis 3D service to be ready (timeout: {timeout}s)...")
+        
+        while time.time() - start_time < timeout:
+            if self.check_service_health():
+                elapsed = time.time() - start_time
+                logger.info(f"Trellis 3D service is ready (waited {elapsed:.1f}s)")
+                return True
+            
+            elapsed = time.time() - start_time
+            logger.info(f"Trellis not ready yet, waiting... ({elapsed:.0f}s / {timeout}s)")
+            time.sleep(poll_interval)
+        
+        logger.error(f"Trellis 3D service not ready after {timeout}s timeout")
+        return False
     
     def batch_generate_models(self, image_paths: list, output_dir: str = "assets/models") -> Dict[str, Any]:
         """Generate 3D models for multiple images.
