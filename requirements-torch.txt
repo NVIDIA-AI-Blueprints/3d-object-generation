@@ -1,5 +1,5 @@
+# ============ PyTorch ============
 --index-url https://download.pytorch.org/whl/cu128
-torch
-torchvision
+torch==2.7.0+cu128
+torchvision==0.22.0+cu128
 torchaudio
-

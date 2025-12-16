@@ -1,0 +1,41 @@
+# ============ Standard packages ============
+pillow==10.4.0
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+tqdm==4.67.1
+easydict==1.13
+opencv-python-headless==4.11.0.86
+scipy==1.15.2
+ninja==1.11.1.4
+rembg==2.0.65
+onnxruntime==1.21.0
+trimesh==4.6.6
+xatlas==0.0.10
+pyvista==0.44.2
+pymeshfix==0.17.0
+igraph==0.11.8
+transformers==4.50.3
+open3d==0.19.0
+spconv-cu126==2.3.8
+gradio==4.44.1
+gradio_litmodel3d==0.0.1
+pydantic==2.10.6
+
+# utils3d from git
+git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8
+
+# Flash attention for Windows Python 3.12
+https://github.com/kingbri1/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu128torch2.7.0cxx11abiFALSE-cp310-cp310-win_amd64.whl; sys_platform == 'win32' and python_version == '3.10'
+https://github.com/kingbri1/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu128torch2.7.0cxx11abiFALSE-cp311-cp311-win_amd64.whl; sys_platform == 'win32' and python_version == '3.11'
+https://github.com/kingbri1/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu128torch2.7.0cxx11abiFALSE-cp312-cp312-win_amd64.whl; sys_platform == 'win32' and python_version == '3.12'
+
+# Kaolin from NVIDIA
+--find-links https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.7.0_cu128.html
+kaolin
+
+# ============ CUDA extensions (run manually with --no-build-isolation) ============
+# These require --no-build-isolation flag, run separately:
+#   pip install --no-build-isolation -e extensions/vox2seq
+#   pip install --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git
+#   pip install --no-build-isolation git+https://github.com/JeffreyXiang/diffoctreerast.git
+#   pip install --no-build-isolation git+https://github.com/autonomousvision/mip-splatting.git#subdirectory=submodules/diff-gaussian-rasterization/
