@@ -69,8 +69,8 @@ TRELLIS_BASE_URL = "http://localhost:8000/v1"
 # Native LLM Settings (used when USE_NATIVE_LLM = True)
 # -----------------------------------------------------------------------------
 # Model name from HuggingFace
-# Qwen3-4B: "Qwen/Qwen3-4B" (use precision: bfloat16) - 4B params, ~8GB VRAM
-# Llama-3.1-8B: "meta-llama/Llama-3.1-8B-Instruct" (use precision: bfloat16) - 8B params, ~16GB VRAM
+# Qwen3-4B: "Qwen/Qwen3-4B" (use precision: bfloat16) - 4B params
+# Llama-3.1-8B: "meta-llama/Llama-3.1-8B-Instruct" (use precision: bfloat16) - 8B params
 # For GPTQ INT4: "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4" (use precision: int4)
 NATIVE_LLM_MODEL = "Qwen/Qwen3-4B"
 
@@ -100,9 +100,9 @@ TRELLIS_CLEAR_CACHE_BETWEEN_IMAGES = True
 # -----------------------------------------------------------------------------
 # Native Memory Management Mode
 # -----------------------------------------------------------------------------
-# NATIVE_VRAM_RESTRICTED_MODE: Restrict VRAM usage to ~16GB
-#   - True:  Aggressively manage memory, suitable for GPUs with 16GB or less
-#   - False: Use all available VRAM, suitable for GPUs with 24GB+
+# NATIVE_VRAM_RESTRICTED_MODE: Restrict VRAM usage
+#   - True:  Aggressively manage memory, suitable for GPUs with limited VRAM
+#   - False: Use all available VRAM
 NATIVE_VRAM_RESTRICTED_MODE = False
 
 # NATIVE_RAM_RESTRICTED_MODE: Unload models instead of moving to CPU
