@@ -265,7 +265,7 @@ class Model3DService:
             time.sleep(poll_interval)
         
         logger.error(f"Trellis 3D service not ready after {timeout}s timeout")
-        return False
+                return False
     
     def batch_generate_models(self, image_paths: list, output_dir: str = "assets/models") -> Dict[str, Any]:
         """Generate 3D models for multiple images.

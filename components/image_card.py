@@ -255,8 +255,17 @@ def create_refresh_handler(image_generation_service):
                 seed=new_seed
             )
 
-            # SANA stays on GPU - will be moved to CPU by GPUMemoryManager
-            # when LLM or TRELLIS needs GPU
+            # Move SANA to CPU after image generation to free GPU memory
+            # This prevents system slowdown when Gradio displays the image
+            image_generation_service.move_sana_pipeline_to_cpu()
+            
+            # Ensure GPU operations complete before Gradio displays image
+            import torch
+            import gc
+            if torch.cuda.is_available():
+                # Note: Removed synchronize() - it blocks system-wide
+                torch.cuda.empty_cache()
+                gc.collect()
 
             invalidate_reason = None
             

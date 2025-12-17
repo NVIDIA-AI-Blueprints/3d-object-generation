@@ -526,8 +526,7 @@ def create_app():
                     gr.update(visible=False),                 # keep workspace hidden
                     gr.update(elem_classes=["main-content", "landing"]), # keep landing centering
                     gr.update(visible=True),                  # keep chat section visible
-                    False,                                    # keep workspace mode False
-                    current_counter,                          # keep current counter
+                    current_counter,                          # keep current counter (4 outputs expected)
                 )
             
             # Valid scene with gallery data - proceed with transition
@@ -623,8 +622,17 @@ def create_app():
                 print(f"Timestamp before generate_images_for_objects: {time.time()}")
                 success, message, generated_images = image_generation_service.generate_images_for_objects(gallery_data, output_dir=config.GENERATED_IMAGES_DIR)
                 print(f"Timestamp after generate_images_for_objects: {time.time()}")
-                # SANA stays on GPU - will be moved to CPU by GPUMemoryManager 
-                # when LLM or TRELLIS needs GPU
+                
+                # Move SANA to CPU after image generation
+                print("Moving SANA to CPU after image generation...")
+                image_generation_service.move_sana_pipeline_to_cpu()
+                
+                # Clear GPU cache (but don't synchronize - it blocks system-wide)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                print("GPU memory cleared, ready for image display")
+                
                 if success and generated_images:
                     updated_data = []
                     for obj in gallery_data:

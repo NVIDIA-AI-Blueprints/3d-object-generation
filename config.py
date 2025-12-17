@@ -97,21 +97,6 @@ TRELLIS_MAX_GPU_MEMORY_FRACTION = 0.95
 # Clear GPU cache between batch image processing to prevent memory buildup
 TRELLIS_CLEAR_CACHE_BETWEEN_IMAGES = True
 
-# -----------------------------------------------------------------------------
-# Native Memory Management Mode
-# -----------------------------------------------------------------------------
-# NATIVE_VRAM_RESTRICTED_MODE: Restrict VRAM usage
-#   - True:  Aggressively manage memory, suitable for GPUs with limited VRAM
-#   - False: Use all available VRAM
-NATIVE_VRAM_RESTRICTED_MODE = False
-
-# NATIVE_RAM_RESTRICTED_MODE: Unload models instead of moving to CPU
-#   - True:  Completely unload models when not needed (saves system RAM, slower switching)
-#   - False: Move models to CPU when not needed (uses system RAM, faster switching)
-# Note: If False, models are preloaded at startup and moved to CPU/GPU as needed
-NATIVE_RAM_RESTRICTED_MODE = False
-
-
 # #############################################################################
 #                        COMMON CONFIGURATION
 # #############################################################################

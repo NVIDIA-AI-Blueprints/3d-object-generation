@@ -106,12 +106,12 @@ def create_image_gallery():
 
         def shift_card_ui(gallery_data):
             """Update the UI to reflect the current gallery data state."""
-            print(f"Updating gallery UI with {len(gallery_data)} objects")
+            import time
+            start_time = time.time()
             updates = []
             for idx in range(MAX_CARDS):
                 if idx < len(gallery_data):
                     obj = gallery_data[idx]
-                    print(f"  Card {idx}: {obj['title']} -> {obj['path']}")
                     
                     updates.append(gr.update(value=f"### {obj['title']}"))
                     
@@ -246,7 +246,8 @@ def create_image_gallery():
             
             updates.append(gr.update(visible=show_convert_all, interactive=enable_convert_all, value=convert_all_text))
             
-            print(f"Gallery UI updated with {len(gallery_data)} visible cards")
+            elapsed = time.time() - start_time
+            print(f"Gallery UI updated with {len(gallery_data)} visible cards (took {elapsed:.3f}s)")
             return updates
         
         # Note: Delete button events are handled in the main app to enable export section updates

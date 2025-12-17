@@ -87,7 +87,7 @@ def clear_gpu_cache():
     if torch.cuda.is_available():
         gc.collect()
         torch.cuda.empty_cache()
-        torch.cuda.synchronize()
+        # Note: Removed synchronize() - it blocks CPU/display while GPU computes
         if VERBOSE:
             logger.debug("GPU cache cleared")
 
@@ -98,7 +98,7 @@ def clear_gpu_cache():
 def get_gpu_memory_info(device_id: int = 0) -> Optional[dict]:
     """Get GPU memory usage in GB."""
     if torch.cuda.is_available():
-        torch.cuda.synchronize()
+        # Note: Removed synchronize() - not needed for memory queries
         allocated = torch.cuda.memory_allocated(device_id) / (1024 ** 3)
         reserved = torch.cuda.memory_reserved(device_id) / (1024 ** 3)
         total = torch.cuda.get_device_properties(device_id).total_memory / (1024 ** 3)

@@ -279,8 +279,17 @@ class ImageGenerationService:
             if content_filtered_objects:
                 logger.warning(f"Content filtered objects: {content_filtered_objects}")
             
+            # Ensure all CUDA operations are complete before returning to Gradio
+            # Clear GPU cache (removed synchronize - it blocks system-wide)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            
             return True, f"Generated {len(generated_images)} images, {len(content_filtered_objects)} content filtered", generated_images
             
         except Exception as e:
             logger.error(f"Error generating images for objects: {e}")
+            # Clear cache on error path (removed synchronize - it blocks system-wide)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             return False, f"Error generating images: {str(e)}", {} 

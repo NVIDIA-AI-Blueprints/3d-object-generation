@@ -134,24 +134,11 @@ The application automatically manages GPU memory across three models:
 - **SANA** (Image generation)
 - **TRELLIS** (3D generation)
 
-```python
-# NATIVE_VRAM_RESTRICTED_MODE: Restrict VRAM usage
-#   - True:  Aggressive memory management for GPUs with limited VRAM
-#   - False: Use all available VRAM
-NATIVE_VRAM_RESTRICTED_MODE = False
-
-# NATIVE_RAM_RESTRICTED_MODE: Unload models instead of moving to CPU
-#   - True:  Completely unload models when not needed (saves system RAM, slower)
-#   - False: Move models to CPU when not needed (uses system RAM, faster switching)
-NATIVE_RAM_RESTRICTED_MODE = False
-```
-
-| Setting | Behavior |
-|---------|----------|
-| Both `False` (default) | Pre-load all models at startup, move to CPU when idle |
-| `VRAM_RESTRICTED = True` | Aggressive memory management for limited VRAM |
-| `RAM_RESTRICTED = True` | Load on-demand, unload when idle (saves system RAM) |
-| Both `True` | Most memory efficient, slowest switching |
+**Memory Management Strategy:**
+- All models are pre-loaded at startup
+- Models are moved to CPU when not actively in use
+- Only one model runs on GPU at a time
+- GPU cache is cleared between model switches
 
 ---
 
@@ -293,12 +280,6 @@ NATIVE_LLM_PRECISION = "bfloat16"      # float16, bfloat16, or int4 (for GPTQ)
 AGENT_MODEL = "meta/llama-3.1-8b-instruct"
 AGENT_BASE_URL = "http://localhost:19002/v1"
 TRELLIS_BASE_URL = "http://localhost:8000/v1"
-
-# =============================================================================
-# Memory Management (Native Mode)
-# =============================================================================
-NATIVE_VRAM_RESTRICTED_MODE = False    # Restrict to 16GB VRAM
-NATIVE_RAM_RESTRICTED_MODE = False     # Unload models vs move to CPU
 
 # =============================================================================
 # Logging
@@ -449,12 +430,9 @@ If all steps succeed without errors, the installation is complete. You can now u
      ```
 
 2. **Out of VRAM**
-   - Enable restricted mode in `config.py`:
-     ```python
-     NATIVE_VRAM_RESTRICTED_MODE = True
-     NATIVE_RAM_RESTRICTED_MODE = True
-     ```
-   - Use a smaller LLM model (Qwen3-4B vs Llama-3.1-8B)
+   - Use a smaller LLM model: Qwen3-4B instead of Llama-3.1-8B
+   - Close other GPU-using applications
+   - The application automatically moves inactive models to CPU
 
 3. **Slow LLM inference**
    - Ensure using Gradio 5.x (not 6.x)

@@ -140,6 +140,20 @@ def handle_scene_description(scene_description, agent_service, gallery_data, ima
                                 print(f"No image generated for {object_name}")
                     else:
                         print(f"Image generation failed: {message}")
+                    
+                    # Move SANA to CPU after image generation to free GPU memory
+                    # This prevents system slowdown when Gradio displays images
+                    print("Moving SANA to CPU after image generation...")
+                    image_generation_service.move_sana_pipeline_to_cpu()
+                    
+                    # Ensure GPU operations complete before Gradio displays images
+                    import torch
+                    import gc
+                    if torch.cuda.is_available():
+                        # Note: Removed synchronize() - it blocks system-wide
+                        torch.cuda.empty_cache()
+                        gc.collect()
+                    print("GPU memory cleared, ready for image display")
                         
                 except Exception as e:
                     print(f"Error during image generation: {str(e)}")

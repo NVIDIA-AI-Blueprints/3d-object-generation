@@ -43,7 +43,7 @@ import config
 
 def download_sana_model():
     """Download the Sana Sprint image generation model."""
-    logger.info("Downloading Sana Sprint model...")
+        logger.info("Downloading Sana Sprint model...")
     try:
         sana_model = SanaSprintPipeline.from_pretrained(
             "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
@@ -61,7 +61,7 @@ def download_sana_model():
 
 def download_guardrail_model():
     """Download the NSFW Prompt Detector guardrail model."""
-    logger.info("Downloading NSFW Prompt Detector model...")
+        logger.info("Downloading NSFW Prompt Detector model...")
     try:
         guardrail_pipe = pipeline("text-classification", model="ezb/NSFW-Prompt-Detector")
         del guardrail_pipe
