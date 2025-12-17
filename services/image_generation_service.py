@@ -292,4 +292,73 @@ class ImageGenerationService:
             # Clear cache on error path (removed synchronize - it blocks system-wide)
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            return False, f"Error generating images: {str(e)}", {} 
+            return False, f"Error generating images: {str(e)}", {}
+    
+    def generate_images_for_objects_with_progress(self, objects_data, output_dir="static/images/generated"):
+        """Generate images for all objects with progress updates (generator).
+        
+        Yields after each image is generated so the UI can update progressively.
+        During generation, keeps image_generating=True so buttons stay disabled.
+        Only sets image_generating=False on final yield when all images are complete.
+        
+        Yields:
+            tuple: (current_idx, total, object_name, updated_objects_data, is_complete)
+        """
+        try:
+            if not self.load_sana_model():
+                yield (0, len(objects_data), "Failed to load model", objects_data, True)
+                return
+            
+            # Create output directory
+            os.makedirs(output_dir, exist_ok=True)
+            
+            total = len(objects_data)
+            content_filtered_objects = []
+            
+            for idx, obj in enumerate(objects_data):
+                object_name = obj["title"]
+                prompt = obj["description"]
+                
+                logger.info(f"Generating image {idx+1}/{total}: {object_name}")
+                success, message, image_path = self.generate_image_from_prompt(
+                    object_name, prompt, output_dir
+                )
+                
+                if success and image_path:
+                    objects_data[idx]["path"] = image_path
+                    # Keep image_generating=True during progress - buttons stay disabled
+                    # Clear any previous failure flags
+                    objects_data[idx] = clear_image_generation_failure_flags(objects_data[idx])
+                    logger.info(f"Generated image for {object_name}: {image_path}")
+                elif message == "PROMPT_CONTENT_FILTERED":
+                    objects_data[idx]["path"] = "static/images/content_filtered.svg"
+                    objects_data[idx]["prompt_content_filtered"] = True
+                    objects_data[idx]["prompt_content_filtered_timestamp"] = datetime.datetime.now().isoformat()
+                    content_filtered_objects.append(object_name)
+                    logger.warning(f"2D prompt content filtered for {object_name}")
+                else:
+                    objects_data[idx]["image_generation_failed"] = True
+                    objects_data[idx]["image_generation_error"] = message
+                    logger.error(f"Failed to generate image for {object_name}: {message}")
+                
+                # Yield progress after each image (buttons still disabled)
+                yield (idx + 1, total, object_name, objects_data.copy(), False)
+            
+            # Final yield - NOW set image_generating=False for all to enable buttons
+            for obj in objects_data:
+                obj["image_generating"] = False
+            
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            
+            yield (total, total, "Complete", objects_data, True)
+            
+        except Exception as e:
+            logger.error(f"Error generating images: {e}")
+            # On error, also clear the generating flag
+            for obj in objects_data:
+                obj["image_generating"] = False
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            yield (0, len(objects_data), f"Error: {str(e)}", objects_data, True) 

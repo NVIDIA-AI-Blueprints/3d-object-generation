@@ -686,6 +686,55 @@ Scene arrangement: [Brief description of how these objects could be arranged tog
         except Exception as e:
             return False, None, f"Error generating prompts: {str(e)}"
     
+    def generate_objects_and_prompts_with_progress(self, description: str):
+        """Generate objects and 2D prompts with progress updates.
+        
+        This is a generator that yields progress updates during generation.
+        
+        Yields:
+            tuple: (progress_current, progress_total, status_message, is_complete, result)
+                - progress_current: Current step number
+                - progress_total: Total number of steps
+                - status_message: Human-readable status
+                - is_complete: True when generation is finished
+                - result: Final result tuple (success, prompts, message) when is_complete=True
+        """
+        try:
+            total_objects = config.NUM_OF_OBJECTS
+            
+            # Step 1: Generate objects list
+            yield (0, total_objects + 1, "Generating object list...", False, None)
+            
+            objects = self.generate_objects_for_scene(description)
+            if not objects:
+                yield (0, total_objects + 1, "No objects generated", True, (False, None, "No objects generated"))
+                return
+            
+            # Update total based on actual objects generated
+            total_objects = len(objects)
+            
+            # Step 2: Generate prompts for each object
+            prompts = {}
+            for idx, obj in enumerate(objects, 1):
+                yield (idx, total_objects + 1, f"Generating prompt {idx}/{total_objects}: {obj}", False, None)
+                
+                prompt = f"Generate visual prompt suitable for 2D image generation for: {obj}"
+                response = self.agent.run(prompt, RuleType.PROMPT_GENERATION)
+                response_text = response.output.value
+                
+                # Extract the prompt from the response
+                if "Object:" in response_text and "Prompt:" in response_text:
+                    prompt_text = response_text.split("Prompt:")[-1].strip()
+                    prompts[obj] = prompt_text
+                else:
+                    prompts[obj] = f"{obj}, detailed 2D image on white background"
+            
+            # Final yield with complete results
+            yield (total_objects + 1, total_objects + 1, "Generation complete!", True, (True, prompts, "2D prompts generated successfully"))
+            
+        except Exception as e:
+            yield (0, 1, f"Error: {str(e)}", True, (False, None, f"Error generating prompts: {str(e)}"))
+    
     def clear_memory(self) -> bool:
         """Clear the agent's conversation memory and reset with new randomization."""
         if self.agent:

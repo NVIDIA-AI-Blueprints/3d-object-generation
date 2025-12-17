@@ -425,6 +425,14 @@ def create_app():
                 with gr.Column(visible=False, elem_classes=["workspace-section"]) as workspace_section:
                     with gr.Row():
                         start_over_btn = gr.Button("← Start over with a new scene prompt", elem_classes=["start-over-btn"], size="sm")
+                    
+                    # Image generation progress bar (shown during SANA image generation)
+                    image_progress_html = gr.HTML(
+                        value="",
+                        visible=False,
+                        elem_classes=["image-generation-progress"]
+                    )
+                    
                     # Object gallery
                     gallery_components = create_image_gallery()
                     
@@ -470,6 +478,116 @@ def create_app():
                 status_components = {"close_btn": gr.Button(visible=False)}
         
         # Wire up the event handlers
+        def create_progress_html(current, total, message):
+            """Create HTML for the progress bar."""
+            percentage = int((current / total) * 100) if total > 0 else 0
+            return f"""
+            <div class="generation-progress-container">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" style="width: {percentage}%"></div>
+                </div>
+                <div class="progress-text">{message} ({current}/{total})</div>
+            </div>
+            """
+        
+        def handle_scene_input_with_progress(scene_description, gallery_data):
+            """Handle scene input with progress updates (generator function).
+            
+            This generator yields updates to:
+            - scene_input (clear it and disable during processing)
+            - gallery_data
+            - progress_html (show progress)
+            - tip (hide/show tips)
+            """
+            if not scene_description.strip():
+                tip_html = """
+                <div class="tip-message">
+                    <span class="tip-icon">💡</span>
+                    <span class="tip-text">Please enter a scene description.</span>
+                </div>
+                """
+                yield gr.update(value="", interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+                return
+            
+            # Immediately disable input and clear it while processing
+            yield gr.update(value="", interactive=False), gallery_data, gr.update(visible=False), gr.update(visible=False)
+            
+            # Prepare GPU for LLM inference
+            if config.USE_NATIVE_LLM:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_llm()
+            
+            # First, classify the input
+            classification, tip_message = agent_service.classify_input(scene_description)
+            
+            if classification != "SCENE":
+                tip_html = f"""
+                <div class="tip-message">
+                    <span class="tip-icon">💡</span>
+                    <span class="tip-text">{tip_message}</span>
+                </div>
+                """
+                # Re-enable input on non-scene classification
+                yield gr.update(value="", interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+                return
+            
+            # Valid scene - show progress bar and start generation
+            total_objects = config.NUM_OF_OBJECTS
+            
+            # Use the generator version to get progress updates
+            final_result = None
+            for progress_current, progress_total, status_message, is_complete, result in agent_service.generate_objects_and_prompts_with_progress(scene_description):
+                progress_html = create_progress_html(progress_current, progress_total, status_message)
+                
+                if is_complete:
+                    final_result = result
+                    # Hide progress bar on completion (keep input disabled - will re-enable after image gen)
+                    yield gr.update(interactive=False), gallery_data, gr.update(visible=False), gr.update(visible=False)
+                else:
+                    # Show progress update (input stays disabled)
+                    yield gr.update(interactive=False), gallery_data, gr.update(value=progress_html, visible=True), gr.update(visible=False)
+            
+            # Process final result
+            if final_result:
+                success, prompts, message = final_result
+                
+                if success and prompts:
+                    # Create gallery data from prompts
+                    new_gallery_data = []
+                    for obj_name, prompt in prompts.items():
+                        gallery_item = {
+                            "title": obj_name,
+                            "path": None,
+                            "description": prompt,
+                            "image_generating": True,
+                        }
+                        new_gallery_data.append(gallery_item)
+                    
+                    # Reset agent memory
+                    agent_service.clear_memory()
+                    
+                    # Yield final result with new gallery data (input stays disabled during image gen)
+                    yield gr.update(interactive=False), new_gallery_data, gr.update(visible=False), gr.update(visible=False)
+                else:
+                    tip_html = f"""
+                    <div class="tip-message">
+                        <span class="tip-icon">⚠️</span>
+                        <span class="tip-text">Error: {message}</span>
+                    </div>
+                    """
+                    # Re-enable input on error
+                    yield gr.update(value="", interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+            else:
+                tip_html = """
+                <div class="tip-message">
+                    <span class="tip-icon">⚠️</span>
+                    <span class="tip-text">Error generating objects</span>
+                </div>
+                """
+                # Re-enable input on error
+                yield gr.update(value="", interactive=True), gallery_data, gr.update(visible=False), gr.update(value=tip_html, visible=True)
+        
+        # Keep the old non-generator version for compatibility
         def process_scene_description(scene_description, gallery_data):
             """Process scene description and generate objects, then update gallery."""
             if not scene_description.strip():
@@ -607,6 +725,124 @@ def create_app():
             return updated_data
         
         # New: Generate images for all objects after moving to workspace
+        def create_image_progress_html(current, total, object_name):
+            """Create HTML for image generation progress bar."""
+            percentage = int((current / total) * 100) if total > 0 else 0
+            return f"""
+            <div class="generation-progress-container">
+                <div class="progress-bar-wrapper">
+                    <div class="progress-bar" style="width: {percentage}%"></div>
+                </div>
+                <div class="progress-text">Generating image {current}/{total}: {object_name}</div>
+            </div>
+            """
+        
+        def generate_images_with_ui_updates(gallery_data):
+            """Generate images progressively and update card UI after each image (generator).
+            
+            This generator yields:
+            - gallery_data (State)
+            - image_progress_html (HTML visibility/content)
+            - scene_input (to re-enable after completion)
+            - all card UI components from shift_card_ui
+            """
+            global _in_workspace_mode
+            
+            # Get the card UI update function
+            shift_card_ui = gallery_components["shift_card_ui"]
+            
+            if not _in_workspace_mode or not gallery_data:
+                # Yield initial state with hidden progress, re-enable input
+                card_updates = shift_card_ui(gallery_data if gallery_data else [])
+                yield [gallery_data, gr.update(visible=False), gr.update(interactive=True)] + card_updates
+                return
+            
+            print("Generating images progressively with UI updates...")
+            
+            # Prepare GPU for SANA
+            if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_sana()
+            
+            try:
+                # Use the progressive generator
+                for current, total, object_name, updated_data, is_complete in image_generation_service.generate_images_for_objects_with_progress(
+                    gallery_data, output_dir=config.GENERATED_IMAGES_DIR
+                ):
+                    # Get card UI updates for current state
+                    card_updates = shift_card_ui(updated_data)
+                    
+                    if is_complete:
+                        # Final update - hide progress bar, re-enable text input
+                        print(f"Image generation complete: {current}/{total}")
+                        # Move SANA to CPU
+                        image_generation_service.move_sana_pipeline_to_cpu()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            gc.collect()
+                        yield [updated_data, gr.update(visible=False), gr.update(interactive=True)] + card_updates
+                    else:
+                        # Progress update - show progress bar, keep input disabled
+                        progress_html = create_image_progress_html(current, total, object_name)
+                        print(f"Generated image {current}/{total}: {object_name}")
+                        yield [updated_data, gr.update(value=progress_html, visible=True), gr.update(interactive=False)] + card_updates
+                        
+            except Exception as e:
+                print(f"Error during image generation: {str(e)}")
+                # Clear flags, hide progress, re-enable input
+                for obj in gallery_data:
+                    if "image_generating" in obj:
+                        obj["image_generating"] = False
+                card_updates = shift_card_ui(gallery_data)
+                yield [gallery_data, gr.update(visible=False), gr.update(interactive=True)] + card_updates
+        
+        def generate_images_for_gallery_with_progress(gallery_data):
+            """Generate images progressively with UI updates after each image (generator)."""
+            global _in_workspace_mode
+            if not _in_workspace_mode:
+                yield gallery_data, gr.update(visible=False)
+                return
+            
+            if not gallery_data:
+                yield gallery_data, gr.update(visible=False)
+                return
+            
+            print("Generating images progressively...")
+            
+            # Prepare GPU for SANA
+            if config.USE_NATIVE_LLM or config.USE_NATIVE_TRELLIS:
+                gpu_manager = get_gpu_memory_manager()
+                gpu_manager.prepare_for_sana()
+            
+            try:
+                # Use the progressive generator
+                for current, total, object_name, updated_data, is_complete in image_generation_service.generate_images_for_objects_with_progress(
+                    gallery_data, output_dir=config.GENERATED_IMAGES_DIR
+                ):
+                    if is_complete:
+                        # Final update - hide progress bar
+                        print(f"Image generation complete: {current}/{total}")
+                        # Move SANA to CPU
+                        image_generation_service.move_sana_pipeline_to_cpu()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                            gc.collect()
+                        yield updated_data, gr.update(visible=False)
+                    else:
+                        # Progress update - show progress bar and update gallery
+                        progress_html = create_image_progress_html(current, total, object_name)
+                        print(f"Generated image {current}/{total}: {object_name}")
+                        yield updated_data, gr.update(value=progress_html, visible=True)
+                        
+            except Exception as e:
+                print(f"Error during image generation: {str(e)}")
+                # Clear flags and hide progress
+                for obj in gallery_data:
+                    if "image_generating" in obj:
+                        obj["image_generating"] = False
+                yield gallery_data, gr.update(visible=False)
+        
+        # Keep the old non-generator version for compatibility
         def generate_images_for_gallery(gallery_data):
             print(f"Timestamp before generate_images_for_gallery: {time.time()}")
             # Only proceed if we're in workspace mode (valid scene input)
@@ -792,11 +1028,11 @@ def create_app():
             outputs=[llm_spinner, llm_status, chat_components["section"], refresh_status_btn, health_timer]
         )
         
-        # Connect send button to process scene description
+        # Connect send button to process scene description with progress
         chat_components["send_btn"].click(
-            fn=handle_scene_input,
+            fn=handle_scene_input_with_progress,
             inputs=[chat_components["input"], gallery_components["data"]],
-            outputs=[chat_components["input"], gallery_components["data"], chat_components["tip"]]
+            outputs=[chat_components["input"], gallery_components["data"], chat_components["progress"], chat_components["tip"]]
         ).then(
             fn=gallery_components["shift_card_ui"],
             inputs=[gallery_components["data"]],
@@ -826,13 +1062,9 @@ def create_app():
             inputs=[],
             outputs=[]
         ).then(
-            fn=generate_images_for_gallery,
+            fn=generate_images_with_ui_updates,
             inputs=[gallery_components["data"]],
-            outputs=[gallery_components["data"]]
-        ).then(
-            fn=gallery_components["shift_card_ui"],
-            inputs=[gallery_components["data"]],
-            outputs=gallery_components["get_all_card_outputs"]()
+            outputs=[gallery_components["data"], image_progress_html, chat_components["input"]] + gallery_components["get_all_card_outputs"]()
         ).then(
             fn=update_export_section,
             inputs=[gallery_components["data"]],
@@ -843,11 +1075,11 @@ def create_app():
             outputs=[start_over_btn]
         )
         
-        # Connect Enter key for scene input
+        # Connect Enter key for scene input with progress
         chat_components["input"].submit(
-            fn=handle_scene_input,
+            fn=handle_scene_input_with_progress,
             inputs=[chat_components["input"], gallery_components["data"]],
-            outputs=[chat_components["input"], gallery_components["data"], chat_components["tip"]]
+            outputs=[chat_components["input"], gallery_components["data"], chat_components["progress"], chat_components["tip"]]
         ).then(
             fn=gallery_components["shift_card_ui"],
             inputs=[gallery_components["data"]],
@@ -877,13 +1109,9 @@ def create_app():
             inputs=[],
             outputs=[]
         ).then(
-            fn=generate_images_for_gallery,
+            fn=generate_images_with_ui_updates,
             inputs=[gallery_components["data"]],
-            outputs=[gallery_components["data"]]
-        ).then(
-            fn=gallery_components["shift_card_ui"],
-            inputs=[gallery_components["data"]],
-            outputs=gallery_components["get_all_card_outputs"]()
+            outputs=[gallery_components["data"], image_progress_html, chat_components["input"]] + gallery_components["get_all_card_outputs"]()
         ).then(
             fn=update_export_section,
             inputs=[gallery_components["data"]],

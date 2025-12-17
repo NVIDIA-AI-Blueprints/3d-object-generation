@@ -44,6 +44,13 @@ def create_chat_interface():
             with gr.Column(scale=1, min_width=50):
                 send_btn = gr.Button("▶", elem_classes=["send-button"], size="sm")
         
+        # Progress bar for object/prompt generation
+        progress_html = gr.HTML(
+            value="",
+            visible=False,
+            elem_classes=["generation-progress"]
+        )
+        
         # Tip component for non-scene inputs
         tip_component = gr.HTML(
             value="",
@@ -55,6 +62,7 @@ def create_chat_interface():
         "section": chat_section,
         "input": scene_input,
         "send_btn": send_btn,
+        "progress": progress_html,
         "tip": tip_component
     }
 
