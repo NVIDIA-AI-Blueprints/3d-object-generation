@@ -224,7 +224,7 @@ def create_export_modal():
 def open_export_modal(gallery_data):
     """Open the export modal."""
     if not gallery_data:
-        return gr.update(visible=True), "No objects to export."
+        return gr.update(visible=True)
     
     # Filter for objects that have 3D models
     exportable_objects = []
