@@ -286,4 +286,6 @@ def export_3d_assets_to_folder(gallery_data, folder_name):
         return gr.update(visible=False), gr.update(visible=False)
     
     except Exception as e:
-        return gr.update(visible=False), gr.update(visible=False) 
+        import html
+        error_html = f'<div style="color: #dc2626; font-size: 14px; padding: 8px 0;">⚠️ Export failed: {html.escape(str(e))}</div>'
+        return gr.update(visible=True), gr.update(value=error_html, visible=True) 
