@@ -74,6 +74,17 @@ def get_conda_env_name():
     except Exception as e:
         logger.debug(f"Could not read CONDA_ENV_NAME from config.py: {e}")
     return DEFAULT_CONDA_ENV_NAME
+
+def run_stop_services_script(base_path):
+    """Run the platform-appropriate stop-services script (cleans up any
+    services left running outside this addon's own process tracking,
+    e.g. from a previous Blender session)."""
+    script_name = "stop_services.bat" if platform.system() == "Windows" else "stop_services.sh"
+    if platform.system() == "Windows":
+        subprocess.run([script_name], shell=True, check=True, cwd=base_path)
+    else:
+        subprocess.run(["bash", script_name], check=True, cwd=base_path)
+
 starting_services_lock = threading.Lock()
 stop_thread = False
 log_output_stop = threading.Event()
@@ -511,8 +522,8 @@ class TRELLIS_OT_ManageTrellis(Operator):
         if overall_status == "READY":
             # Stop services
             try:
-                subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
-                logger.info("Services stopped via stop_services.bat")
+                run_stop_services_script(base_path)
+                logger.info("Services stopped via stop_services script")
                 # Wait briefly for services to become NOT READY
                 start_time = time.time()
                 timeout = 30
@@ -530,7 +541,7 @@ class TRELLIS_OT_ManageTrellis(Operator):
                 with gradio_status_lock:
                     gradio_status = "NOT READY"
             except Exception as e:
-                logger.error(f"Failed to stop services via stop_services.bat: {str(e)}")
+                logger.error(f"Failed to stop services via stop_services script: {str(e)}")
                 self.report({'ERROR'}, "Failed to stop services")
                 return {'CANCELLED'}
         else:
@@ -549,8 +560,8 @@ class TRELLIS_OT_ManageTrellis(Operator):
             else:
                 # Stop any existing partial services
                 try:
-                    subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
-                    logger.info("Existing partial services stopped via stop_services.bat")
+                    run_stop_services_script(base_path)
+                    logger.info("Existing partial services stopped via stop_services script")
                 except Exception as e:
                     logger.warning(f"Failed to stop existing services: {str(e)}")
                     self.report({'WARNING'}, "Failed to stop existing services, continuing with startup")
@@ -686,7 +697,7 @@ def unregister():
     
     base_path = bpy.context.preferences.addons[__name__].preferences.base_path
     try:
-        subprocess.run(["stop_services.bat"], shell=True, check=True, cwd=base_path)
+        run_stop_services_script(base_path)
         logger.info("Services stopped successfully during unregister")
     except Exception as e:
         logger.warning(f"Failed to stop services during unregister: {str(e)}")
