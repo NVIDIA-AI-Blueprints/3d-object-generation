@@ -246,6 +246,18 @@ secrets.py
 .cache/
 cache/
 __pycache__/
+.pip_cache/
+.hf_cache/
+
+# install_linux.sh default locations
+.conda_env/
+.conda_pkgs/
+
+# TRELLIS source, fetched by setup_trellis.bat/.sh (declared as a submodule in
+# .gitmodules, but no gitlink is actually committed for it - see #40 - so git
+# doesn't know to treat this path specially and would otherwise show the
+# entire cloned microsoft/TRELLIS tree as untracked)
+/trellis/
 
 # Gradio specific
 gradio_cached_examples/

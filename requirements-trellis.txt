@@ -35,5 +35,14 @@ igraph
 # Sparse tensor backend TRELLIS's core (non-patched) code uses (config.py: SPCONV_ALGO)
 spconv-cu120
 
+# TRELLIS's sparse-attention module (trellis/modules/sparse/) hardcodes its
+# attention backend to flash_attn, which is never installed by this project
+# on either platform. xformers is the other backend it supports and has
+# prebuilt wheels (flash_attn only ships source, and is a very slow build).
+# Pinned to the exact version built against torch==2.7.0 (requirements-torch.txt) -
+# `pip install xformers` with no pin resolves to a version requiring a much
+# newer torch and will silently upgrade/break it.
+xformers==0.0.30
+
 # Pinned to match the commit microsoft/TRELLIS's own setup.sh installs
 git+https://github.com/EasternJournalist/utils3d.git@9a4eb15e4021b67b12c460c7057d642626897ec8

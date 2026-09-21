@@ -37,6 +37,13 @@ if str(TRELLIS_PATH) not in sys.path:
 # Set TRELLIS environment variables before importing
 os.environ['SPCONV_ALGO'] = 'native'  # Faster for single runs
 
+# TRELLIS defaults both attention backends to flash_attn, which this project
+# never installs (on either platform - install_dependencies.py's CUDA
+# extension list doesn't include it either). Default to backends that are
+# actually installed instead; setdefault so an explicit override still wins.
+os.environ.setdefault('ATTN_BACKEND', 'sdpa')  # trellis.modules.attention: built into torch, no extra install
+os.environ.setdefault('SPARSE_ATTN_BACKEND', 'xformers')  # trellis.modules.sparse: doesn't support sdpa, needs xformers or flash_attn
+
 logger = logging.getLogger(__name__)
 
 # Import config for settings

@@ -25,6 +25,7 @@ This script downloads:
 - Native TRELLIS model (if USE_NATIVE_TRELLIS = True)
 """
 
+import os
 import torch
 import gc
 import sys
@@ -117,7 +118,13 @@ def download_native_trellis_model():
     trellis_path = Path(__file__).parent / "trellis"
     if str(trellis_path) not in sys.path:
         sys.path.insert(0, str(trellis_path))
-    
+
+    # TRELLIS defaults both attention backends to flash_attn, which this
+    # project never installs (see services/trellis_service.py for the same
+    # defaults used at runtime).
+    os.environ.setdefault('ATTN_BACKEND', 'sdpa')
+    os.environ.setdefault('SPARSE_ATTN_BACKEND', 'xformers')
+
     logger.info(f"Downloading native TRELLIS model: {config.NATIVE_TRELLIS_MODEL}...")
     try:
         # Import TRELLIS pipeline

@@ -41,6 +41,13 @@ ENV_PREFIX="${ENV_PREFIX:-$SCRIPT_DIR/.conda_env}"
 export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS:-$SCRIPT_DIR/.conda_pkgs}"
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$SCRIPT_DIR/.pip_cache}"
 export HF_HOME="${HF_HOME:-$SCRIPT_DIR/.hf_cache}"
+# huggingface_hub's "xet" fast-download backend hit repeated DNS/timeout
+# errors on one test network and was measured ~5.6x slower than the plain
+# HTTP downloader for the same file there (20m54s vs 3m43s, both eventually
+# succeeded - not a hang, just much slower under that network's retries).
+# Disabled by default since the plain downloader was strictly better in that
+# test; set to 0 to opt back into xet if your network doesn't have this issue.
+export HF_HUB_DISABLE_XET="${HF_HUB_DISABLE_XET:-1}"
 
 echo "Starting installation process..."
 echo "  Conda env prefix: $ENV_PREFIX"
@@ -110,8 +117,16 @@ run pip install -r requirements-trellis.txt
 # which uses the Linux JIT-build path instead of the bundled Windows wheel.
 echo "Installing TRELLIS CUDA extensions (building from source, may take several minutes)..."
 
-run pip install --no-build-isolation \
-    "git+https://huggingface.co/spaces/dkatz2391/TRELLIS_TextTo3D_Try2@f29eac513da77cf6e2c185f52180bb245df11c8a#subdirectory=extensions/vox2seq"
+# vox2seq's source lives in a subdirectory of a HuggingFace Space. Cloned
+# manually (rather than via `pip install git+...`) because HF's git backend
+# doesn't support the partial clone (--filter=blob:none) pip uses by default
+# for git installs - that fails with "the remote end hung up unexpectedly"
+# even though a plain full clone of the same repo works fine.
+VOX2SEQ_CLONE_DIR="$(mktemp -d)"
+trap 'rm -rf "$VOX2SEQ_CLONE_DIR"' EXIT
+git clone --quiet https://huggingface.co/spaces/dkatz2391/TRELLIS_TextTo3D_Try2 "$VOX2SEQ_CLONE_DIR"
+git -C "$VOX2SEQ_CLONE_DIR" checkout --quiet f29eac513da77cf6e2c185f52180bb245df11c8a
+run pip install --no-build-isolation "$VOX2SEQ_CLONE_DIR/extensions/vox2seq"
 
 run pip install --no-build-isolation \
     "git+https://github.com/NVlabs/nvdiffrast.git@253ac4fcea7de5f396371124af597e6cc957bfae"
