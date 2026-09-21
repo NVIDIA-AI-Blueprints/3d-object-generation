@@ -104,6 +104,32 @@ run python -m pip install setuptools==75.8.2
 echo "Installing torch requirements..."
 run pip install -r requirements-torch.txt
 
+# The CUDA extensions built from source below fail hard if the toolkit's
+# major.minor CUDA version doesn't match what torch itself was compiled
+# with (PyTorch's cpp_extension enforces this strictly - e.g. 13.2 vs 12.8
+# errors even though the driver supports both). Cloud GPU images (vast.ai,
+# etc.) commonly ship a newer system CUDA toolkit than whatever a pinned
+# torch build used, so check now and self-heal by installing a matching
+# toolkit into the conda env, rather than failing partway through the
+# extension builds below.
+TORCH_CUDA_VERSION="$(run python -c 'import torch; print(torch.version.cuda)' 2>/dev/null | tail -1)"
+NVCC_CUDA_VERSION=""
+if [ -n "${CUDA_HOME:-}" ] && [ -x "$CUDA_HOME/bin/nvcc" ]; then
+    NVCC_CUDA_VERSION="$("$CUDA_HOME/bin/nvcc" --version 2>/dev/null | grep -oP 'release \K[0-9]+\.[0-9]+' || true)"
+fi
+if [ -n "$TORCH_CUDA_VERSION" ] && [ -n "$NVCC_CUDA_VERSION" ] && [ "$TORCH_CUDA_VERSION" != "$NVCC_CUDA_VERSION" ]; then
+    echo "[WARN] System CUDA toolkit ($NVCC_CUDA_VERSION) doesn't match the CUDA version torch was built with ($TORCH_CUDA_VERSION)."
+    echo "       Installing a matching CUDA $TORCH_CUDA_VERSION toolkit into the conda env instead of using the system one..."
+    if conda install -y --prefix "$ENV_PREFIX" -c "nvidia/label/cuda-${TORCH_CUDA_VERSION}.0" cuda-toolkit; then
+        export CUDA_HOME="$ENV_PREFIX"
+        export PATH="$CUDA_HOME/bin:$PATH"
+        echo "  Now using CUDA_HOME=$CUDA_HOME"
+    else
+        echo "[WARN] Failed to install a matching CUDA toolkit automatically."
+        echo "       The CUDA extension builds below will likely fail until CUDA_HOME points at a $TORCH_CUDA_VERSION.x toolkit."
+    fi
+fi
+
 echo "Installing core requirements..."
 run pip install -r requirements.txt
 
